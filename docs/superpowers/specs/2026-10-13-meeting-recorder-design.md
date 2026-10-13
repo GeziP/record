@@ -14,7 +14,7 @@
 3. 事后在**本地**转写、区分发言人（我 / 发言人 1、2、3…，可手动改名）；
 4. 可选地生成会议纪要。
 
-设计时参考了开源项目和热门软件：读了 OBS Studio 的采集与封装源码；用 [REA](https://github.com/morluto/rea)（原生程序部分配合 Ghidra）对 Notion、夸克网盘、NVIDIA ShadowPlay，以及 Loom、tl;dv、Jamie 等同类桌面应用做了静态分析；还读了开源项目 OpenWhispr 在 Windows 系统音采集上遇到的问题与修复（见第 15 节）。
+设计时参考了开源项目和热门软件：读了 OBS Studio 的采集与封装源码；用 [REA](https://github.com/morluto/rea)（原生程序部分配合 Ghidra）对 Notion、夸克网盘、NVIDIA ShadowPlay，以及 Loom、tl;dv、Jamie、Granola 等同类桌面应用做了静态分析；还读了开源项目 OpenWhispr 在 Windows 系统音采集上遇到的问题与修复（见第 15 节）。
 
 ## 2. 已确认的决策
 
@@ -118,7 +118,7 @@
 |---|---|---|
 | A 默认播放设备回环（初始方案） | 对 `eConsole` 默认播放设备开回环，共享模式 | OpenWhispr 的实测里能听到 Teams（见 15.6，本机待 S1 复验）；只听默认设备，会议声音走别的设备就漏录；切换默认设备要重连 |
 | A2 默认通信设备回环 | 对 `eCommunications` 设备开回环 | 两个默认角色指向不同设备时使用 |
-| C 所有活动播放设备回环 | 每个活动播放设备各开一路，去重后相加 | 解决“会议声音走非默认设备”；要避免同一来源被重复相加，设备增减需监听 |
+| C 所有活动播放设备回环 | 每个活动播放设备各开一路，去重后相加 | 解决“会议声音走非默认设备”；要避免同一来源被重复相加，设备增减需监听。Granola 对 Teams 的做法是只对 Teams 渲染会话所在的设备开回环（见 15.6），要靠进程名单；C 是不依赖会议软件的通用版本 |
 | B 进程级回环 | `ActivateAudioInterfaceAsync` + `AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK`，排除自身进程树，听所有应用，不受默认设备切换影响 | **Teams 通话音频对它不可见**（15.6，OpenWhispr 实测）；各实现在空闲期的行为不一致；要求完成回调实现 `IAgileObject`、激活等待要设上限、格式要显式指定 |
 
   决策规则：先看“在 S1 的会议软件清单（Teams、Zoom、腾讯会议、飞书、钉钉、浏览器里的网页会议）上漏录次数为 0”；满足的方案里取最简单的。B 只做对照测试，除非它在清单上全部通过，否则不入选。无论选哪个方案，都必须带 5.10 的静默失效监测。
@@ -199,7 +199,7 @@ ffmpeg -itsoffset <v_off> -i video.mkv -itsoffset <m_off> -i mic.mka -itsoffset 
 
 ### 5.10 采集健康监测（不静默失败）
 
-回环采集有一类很隐蔽的失败：流是通的，数据也在写，写进去的却全是静音。OpenWhispr 的实测（见 15.6）是，Teams 通话的音频对进程级回环不可见，整场只录到“我”的声音，没有任何报错。所以健康监测是必需项，不是优化项。
+回环采集有一类很隐蔽的失败：流是通的，数据也在写，写进去的却全是静音。OpenWhispr 的实测（见 15.6）是，Teams 通话的音频对进程级回环不可见，整场只录到“我”的声音，没有任何报错；Granola 也维护着一份“进程级回环听不到”的应用名单（新版 Teams、WhatsApp、8x8），并对 Teams 做输出设备探测。所以健康监测是必需项，不是优化项。
 
 **音频：端点电平对照**（每秒一次，整场录制期间始终有效）
 
@@ -493,8 +493,9 @@ ffmpeg -itsoffset <v_off> -i video.mkv -itsoffset <m_off> -i mic.mka -itsoffset 
 ### 15.5 REA 在这台机器上的能力边界（实测）
 
 - **Electron / JS 应用**：`analyze-javascript-application` 可直接分析 `app.asar` 或解包目录，不需要外部引擎。Notion（asar，约 10 MB）完整跑通。
-- **大体积压缩 bundle**：分析 worker 的堆默认 1024 MiB，单文件超时 300 秒。夸克的三个单行压缩 bundle（2.7 至 4 MB）在语义阶段耗尽堆。用 `--max-heap-mb 8192 --analysis-timeout-ms 1500000` 重跑，每个文件约 6 分钟后仍然耗尽，产出的语义图与默认参数下一模一样（6416 个节点、5394 条关系）；内存一路涨到撞线，没有收敛迹象。后来又把堆放到参数上限 16384 MiB，并且只分析录音窗口那一个文件（约 2.7 MB）重试：11 分 17 秒后仍在语义阶段耗尽堆，语义图只剩 1 个节点、0 条关系、12 个未知项，应用图 42 个节点、52 条边，覆盖状态均为“部分”。结论：这类单行压缩 bundle 放大堆没用，问题在语义分析本身而不在内存；REA 只能给出部分覆盖。
+- **大体积压缩 bundle**：分析 worker 的堆默认 1024 MiB，单文件超时 300 秒。夸克的三个单行压缩 bundle（2.7 至 4 MB）在语义阶段耗尽堆。用 `--max-heap-mb 8192 --analysis-timeout-ms 1500000` 重跑，每个文件约 6 分钟后仍然耗尽，产出的语义图与默认参数下一模一样（6416 个节点、5394 条关系）；内存一路涨到撞线，没有收敛迹象。后来又把堆放到参数上限 16384 MiB，并且只分析录音窗口那一个文件（约 2.7 MB）重试：11 分 17 秒后仍在语义阶段耗尽堆，语义图只剩 1 个节点、0 条关系、12 个未知项，应用图 42 个节点、52 条边，覆盖状态均为“部分”。结论：对这几个文件放大堆没用，REA 只能给出部分覆盖。**不能把原因简单归为“文件大”或“单行”**：后来分析的 Granola 主进程包更大（6.8 MB，最长一行 3.6 MB），12 GiB 堆下 1 分 44 秒就跑完了（见下）。夸克这几个文件为什么会让语义阶段耗尽堆，没有查明。
 - **普通 Electron 应用的对照**：tl;dv（asar 36 MB、1158 个文件、约 214 万个 AST 节点）用 8 GiB 堆约 1 分钟跑完，覆盖状态为“部分”：识别出 1 个主进程、53 个渲染端节点、3 个原生插件、57 个 IPC 操作（其中 35 个是字面量通道）；窗口、预加载、主进程处理器都识别为 0，多半是打包后的别名造成的漏识别（推断），不等于不存在，所以窗口、热键等细节仍然靠关键字与上下文读取。
+- **Granola（asar 70 MB、953 个相关文件、约 662 万个 AST 节点）**：第一次被 REA 拒绝，原因是 asar 里登记的几个原生模块的哈希，与解包出来的文件对不上（打包之后又对 `.node` 做了代码签名，是常见情形；安装包整体哈希已按官方清单核对过）。REA 默认中止，并提示可以用 `--integrity-policy record-and-continue`，这些文件会按“不可信字节”保留，这个保护是合理的。加上该参数、堆设为 12 GiB 后，1 分 44 秒跑完，覆盖状态为“部分”：识别出 1 个主进程、1 个渲染端、9 个原生插件节点、11 个 IPC 操作（只有 2 个是字面量通道）；窗口、预加载入口、工具进程、原生插件绑定都是 0。而主进程里实际有若干个工具进程和一个 Rust 原生模块，说明 REA 的结构化结果在打包后的代码上漏识别明显，采集细节依然要靠关键字与上下文读取。
 - **自带 Chromium 分支、API 名不是 `electron` 的应用**（如夸克）：窗口、IPC、预加载分析全是 0，这不等于不存在，需要配合关键字与上下文读取。
 - **特性追踪**：`trace-application-feature` 可在已有证据上，以路由 / 字符串 / API / 通道 / 模块为种子追踪。对夸克得到的是应用级结构（入口、窗口、Worker、存储、端点），不含函数级调用关系。
 - **原生 Windows 程序**：深度分析（`search`、`decompile`、`xrefs`）需要 Ghidra 12.1.x 加 64 位完整 JDK 21，或 IDA；Hopper 在 Windows 上不支持。没有引擎时，`inspect-artifact`、`inspect-pe-resources` 只能给出清单层面的信息。
@@ -542,6 +543,19 @@ ffmpeg -itsoffset <v_off> -i video.mkv -itsoffset <m_off> -i mic.mka -itsoffset 
 - 会议检测靠三个自研原生插件。`mic-activity`：只导入 COM 与 `QueryFullProcessImageNameW`，没有注册表 API，推断是枚举音频会话并查进程路径。`uia`：用 UI 自动化在 Teams、Zoom 窗口里找到“会议信息”按钮并**点击**，读出标题与链接。`accessibility`：WinEvent 钩子监听 Zoom 窗口。后两个会去操作别的软件的界面，本设计不采用。
 - 发言人：转写在云端，客户端只提供改名接口；声纹功能有单独的“同意”接口（`voice-printing-consent`）。将来做跨会议声纹库，必须先取得同意（第 14 节）。
 
+**Granola 7.637.0（Electron + Rust 原生模块；只录音，不录屏）**：
+
+- 结构：Electron 主进程，加若干独立的工具进程（本地转写、本地说话人分离、听写、麦克风监测、音频采集）。原生部分是 Rust：`granola.native.windows` 用 napi 2.16 与 `windows` 0.60 crate，模块有 `audio_capture`（含重采样）、`device_render_loopback`、`render_sessions`、`device_info`、`process_list`。随包还有键盘钩子服务（`SetWindowsHookEx`）、Chrome 的 native messaging host（Go 写的，经命名管道通信）、第三方会议自动化程序、虚拟摄像头组件。只读了字符串和主进程脚本，没有运行。
+- **系统音：默认是设备回环，进程级回环是受控开关。** 主进程里的源选择函数只有两个结果：`loopback`（默认）与 `loopbackAllDevices`。只有开关 `windows_loopback_all_devices`（默认关）打开、系统版本号 ≥ 19041、当前没有“已知听不到”的应用、且麦克风使用检测可用时，才选后者。`loopbackAllDevices` 的底层实现是推断：它要求的最低版本与进程级回环 API 的最低版本一致。
+- **“已知听不到”名单**（开关 `windows_process_loopback_blind` 的默认值，可远程下发）：新版 Teams（`com.microsoft.teams2`）、WhatsApp、8x8 Work。这与 OpenWhispr 对 Teams 的实测互相印证。这类应用退出 20 秒后才切回。
+- **对 Teams 的专门处理**（两个开关默认都关）：`windows_teams_device_loopback` 打开后，对 **Teams 渲染会话所在的那个设备**开设备回环；`windows_teams_output_monitor` 打开后，每 30 秒（发现不一致后每 5 秒）探测 Teams 相关进程（`ms-teams.exe`、`ms-teams_modulehost.exe`、`msteamsvdi.exe`、`msedgewebview2.exe`）的活动渲染会话：在哪个设备、峰值多少，同时取系统的默认设备与默认通信设备。最响的会话不在被采集的设备上，就记一条“输出设备不一致”日志；默认设备变化时重新获取系统音；连续 5 次探测失败就停止探测。读到的代码里，不一致**只记日志，不自动切换**。→ 5.3、5.10。
+- 会议检测：靠“哪些应用正在使用麦克风”，来自音频会话的激活、失活、过期、消失事件（带会话 ID、进程 ID、进程名），可执行文件名再映射成应用标识。另有 UI 自动化、第三方会议自动化程序、Chrome 的 native messaging host。其中第三方会议自动化程序会去操作 Zoom、Teams 的界面（选摄像头、复制邀请链接、轮询花名册），本设计不采用。
+- 发言人：Teams、Zoom 的说话人走独立的 Windows 子进程读取“花名册”（推断是读界面元素），不是声纹；声纹相关开关 `voice_fingerprint_*` 默认关。
+- **本地转写与说话人分离（对子项目 B 有直接参考价值，不构成结论）**：转写用 sherpa-onnx（Windows x64 的 Node 绑定加 C API 动态库），引擎有 Parakeet（NeMo transducer，BPE，2 线程，CPU，支持热词）和 Whisper（独立的 `whisper-server` 进程）；说话人分离用 pyannote segmentation 3.0（ONNX）、WeSpeaker ResNet34（int8 ONNX）、PLDA（pyannote “community-1” 一套）、谱聚类（最多 32 人，种子固定），另有 VAD。模型与库按平台下载，文件名与 SHA-256 写死在客户端里，加载前逐个校验。转写与分离各在独立的工具进程里，有“跟不上实时”的事件。
+- 本地存储：`better-sqlite3-multiple-ciphers`，即带加密的 SQLite。
+- 热键：只有 `Alt+Space`（快速对话）和一个仅 macOS 的组合，用 Electron `globalShortcut`，注册失败写日志。
+- 对本设计：独立印证了“进程级回环对 Teams 不可靠，默认走设备回环”；Teams 的输出设备探测给 S1 提供了现成的清单与做法；它的探测只记日志，与本设计“只告警、不自动换方案”的取向一致；B 阶段的引擎选型（sherpa-onnx、pyannote 分割、WeSpeaker 嵌入）有了同类产品的先例。
+
 **NVIDIA ShadowPlay 11.0.9.251（REA + Ghidra；原生 C++，多进程多 DLL）**：
 
 - 画面：NvFBC（NVIDIA 专有的帧缓冲捕获，支持按进程建会话；会话失效时有“重建 N 次仍失败就停止采集”的逻辑，受保护内容有专门的错误码），直接喂给 NVENC（H.264、HEVC、AV1）。HDR 采集依赖编码器支持 ARGB10 输入和 10 位编码，不支持时有专门的日志。NvFBC 对第三方不可用，本设计用 Desktop Duplication 加 ffmpeg 的 NVENC。
@@ -556,14 +570,15 @@ ffmpeg -itsoffset <v_off> -i video.mkv -itsoffset <m_off> -i mic.mka -itsoffset 
 
 **这些调研改变了设计的哪些地方**：
 
-1. 系统音的回环方案从“只有 A”改成四个候选加决策规则，进程级回环降为对照项（5.3）。
+1. 系统音的回环方案从“只有 A”改成四个候选加决策规则，进程级回环降为对照项（5.3）。OpenWhispr 的实测与 Granola 的“听不到”名单互相印证，两家的默认都是设备回环。
 2. 新增整场有效的静默失效监测，只告警、不自动换方案（5.10）。
 3. 诊断计数按原因分类，每次录制写环境快照（5.9）。
 4. 单次补静音过长要报警（5.5）。
 5. 热键注册策略与全屏、管理员窗口的实测列入 S5（6.2）。
 6. 不做静默兜底（5.2、5.10）。
 7. 采集端是否做回声消除，有了同类产品的对照（7.2）。
-8. 将来做“自动检测会议开始”时的三条路线：枚举音频会话（Notion；tl;dv 为推断）、进程名名单（夸克）、UI 自动化点击会议软件界面（tl;dv，本设计不采用）。
+8. 将来做“自动检测会议开始”时的三条路线：枚举音频会话（Notion；Granola 读到了会话激活与失活事件的处理；tl;dv 为推断）、进程名名单（夸克）、UI 自动化操作会议软件界面（tl;dv、Granola，本设计不采用）。
+9. 子项目 B 的引擎选型（sherpa-onnx、pyannote 分割、WeSpeaker 嵌入、谱聚类、模型哈希校验、独立进程）有了 Granola 这个同类产品的先例；是否采用仍由 S4 实测决定。
 
 ## 16. 附录
 
