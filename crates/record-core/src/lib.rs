@@ -1,4 +1,5 @@
 pub mod clock;
+pub mod config;
 pub mod dsp;
 pub mod geometry;
 pub mod health;
