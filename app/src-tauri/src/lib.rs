@@ -3,3 +3,5 @@
 //! 纯逻辑模块（`tray_model`、`notice`、`hotkeys`、`runner`）不依赖 Tauri，可以直接单元测试；
 //! `app` 是把它们装配到 Tauri 上的胶水，靠 `scripts/shell-check.ps1` 在真机上验证。
 #![cfg(windows)]
+
+pub mod tray_model;
