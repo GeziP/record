@@ -6,6 +6,7 @@
 
 pub mod backend;
 pub mod hotkeys;
+pub mod logging;
 pub mod notice;
 pub mod runner;
 pub mod tray_model;
