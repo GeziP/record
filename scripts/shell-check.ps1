@@ -1,4 +1,4 @@
-﻿# 外壳（record.exe）的真机检查：热键开始与保存、托盘与通知的决定、退出与崩溃恢复、睡眠与关机事件、
+﻿# 外壳（record.exe）的真机检查：热键开始与保存、托盘与通知的决定、录制期间保持唤醒、退出与崩溃恢复、睡眠与关机事件、
 # 启动失败、热键冲突、配置错误、首次向导与设置窗口。
 #
 # 用法：
@@ -32,6 +32,14 @@ public static class ShellNative {
     [DllImport("user32.dll")] public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindowW(string cls, string title);
     [DllImport("user32.dll")] public static extern IntPtr SendMessageW(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("powrprof.dll")] static extern uint CallNtPowerInformation(int level, IntPtr input, uint inputLen, out uint output, uint outputLen);
+    // 整机汇总的“执行状态”（各进程电源请求叠加的结果）：0x1 系统不因空闲休眠，0x2 显示器常亮。不需要管理员权限。
+    public static uint ExecutionState() {
+        uint state;
+        uint status = CallNtPowerInformation(16, IntPtr.Zero, 0, out state, 4);   // 16 = SystemExecutionState
+        if (status != 0) throw new Exception("CallNtPowerInformation 失败：0x" + status.ToString("X"));
+        return state;
+    }
     delegate bool EnumProc(IntPtr h, IntPtr p);
     [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc cb, IntPtr p);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
@@ -69,6 +77,9 @@ function Check([string]$name, [bool]$ok, [string]$detail = '') {
     '{0}  {1}  {2}' -f $(if ($ok) { '[通过]' } else { '[失败]' }), $name, $detail
 }
 function Info([string]$text) { 'INFO ' + $text }
+# 整机电源状态（各进程电源请求叠加的结果）里“之前没有、现在有”的位，只看 0x1 系统不休眠与 0x2 显示器常亮。
+# 别的程序也可能占着请求，所以“撤销了没有”只看多出来的位：它们只能是本程序造成的。
+function Power-Leftover([int]$before, [int]$now) { $now -band 3 -band (3 -bxor ($before -band 3)) }
 
 # ───────────── 辅助：隔离环境、启动、日志、按键 ─────────────
 $work = Join-Path $env:TEMP 'record-shell'
@@ -242,6 +253,7 @@ try {
         Check '待命时 CPU 低于 1%' ($idleCpu -lt 1) ('{0:N2}%' -f $idleCpu)
 
         # 热键开始：连按两次（间隔约 0.2 秒）只应开始一场
+        $power0 = [int][ShellNative]::ExecutionState()
         $n = (Read-Log $box).Count
         Press-Chord 'Ctrl', 'Alt', 'R'
         Press-Chord 'Ctrl', 'Alt', 'R'
@@ -253,6 +265,10 @@ try {
         Check '连按两次只开始一场' ((Sessions $box).Count -eq 1) "会话数 $((Sessions $box).Count)"
         $dir = (Sessions $box)[0].FullName
         Check '录制中 session.json 的状态是 recording' ((Read-Session $dir).state -eq 'recording') ''
+        $held = Wait-Log $box '已请求保持唤醒' $n 3000
+        Check '录制中：日志写明已请求保持唤醒（显示器常亮、系统不因空闲休眠）' ($held.Count -gt 0) ($held -join ' ')
+        $power1 = [int][ShellNative]::ExecutionState()
+        Check '录制中：整机电源状态里“系统不休眠”“显示器常亮”两位都在' (($power1 -band 3) -eq 3) ('录制前 0x{0:X}，录制中 0x{1:X}' -f $power0, $power1)
         Start-Sleep -Seconds 4
         $tips = @(Read-Log $box | Where-Object { $_ -match '托盘提示更新.*录制中' })
         Check '录制中托盘提示随时间更新' ($tips.Count -ge 2) "提示更新 $($tips.Count) 次，最后一条：$($tips[-1])"
@@ -264,6 +280,9 @@ try {
         Press-Chord 'Ctrl', 'Alt', 'S'
         $idle = Wait-Log $box '托盘图标更新.*Standby' $n 20000
         Check '热键保存 → 托盘回到待命' ($idle.Count -gt 0) ''
+        $released = Wait-Log $box '已撤销保持唤醒' $n 5000
+        $power2 = [int][ShellNative]::ExecutionState()
+        Check '保存后：日志写明已撤销保持唤醒，录制前没有的电源位都清掉了' (($released.Count -gt 0) -and ((Power-Leftover $power0 $power2) -eq 0)) ('录制前 0x{0:X}，录制中 0x{1:X}，保存后 0x{2:X}' -f $power0, $power1, $power2)
         $saved = Wait-Log $box '通知.*show=true.*已保存' $n 3000
         Check '标准模式：保存时弹通知' ($saved.Count -gt 0) ($saved -join ' ')
         $meeting = Join-Path $dir 'meeting.mp4'
@@ -311,6 +330,7 @@ try {
         Write-Config $box (Standard-Config $box 'quiet')
         $app = Start-App $box
         [void](Ready $box $app)
+        $powerK = [int][ShellNative]::ExecutionState()
         $n = (Read-Log $box).Count
         Press-Chord 'Ctrl', 'Alt', 'R'
         Check '第三场开始' ((Wait-Log $box '托盘图标更新.*Recording' $n 10000).Count -gt 0) ''
@@ -321,6 +341,8 @@ try {
         Stop-Process -Id $app.Id -Force
         [void]$app.WaitForExit(5000)
         Start-Sleep -Seconds 2
+        $powerKilled = [int][ShellNative]::ExecutionState()
+        Check '被杀后：系统自动收回了电源请求（录制前没有的位都清掉了）' ((Power-Leftover $powerK $powerKilled) -eq 0) ('录制前 0x{0:X}，被杀后 0x{1:X}' -f $powerK, $powerKilled)
         Check '被杀后 session.json 仍是 recording（没来得及收尾）' ((Read-Session $third).state -eq 'recording') ''
         $app = Start-App $box
         Check '重新启动并就绪' (Ready $box $app) ''
