@@ -434,6 +434,19 @@ pub fn start(p: StartParams, events: Sender<EngineEvent>) -> Result<Recorder, St
     Ok(rec)
 }
 
+/// 会话目录里各轨道文件（mkv 是画面，mka 是音频；编码器重启过的轨道还有后续各段）已写入的字节数。
+/// 用 `std::fs::metadata(路径)` 读，不用目录项自带的元数据：ffmpeg 写文件不刷盘，目录项里的大小要等文件关闭才更新，读它会一直是 0。
+fn written_bytes(dir: &std::path::Path) -> u64 {
+    std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| matches!(e.path().extension().and_then(|x| x.to_str()), Some("mkv" | "mka")))
+        .filter_map(|e| std::fs::metadata(e.path()).ok())
+        .map(|m| m.len())
+        .sum()
+}
+
 impl Recorder {
     pub fn id(&self) -> &str {
         &self.id
@@ -444,15 +457,7 @@ impl Recorder {
     }
 
     pub fn status(&self) -> Status {
-        // 轨道文件：mkv 是画面，mka 是音频；编码器重启过的轨道还有后续各段
-        let bytes = std::fs::read_dir(&self.dir)
-            .into_iter()
-            .flatten()
-            .flatten()
-            .filter(|e| matches!(e.path().extension().and_then(|x| x.to_str()), Some("mkv" | "mka")))
-            .filter_map(|e| e.metadata().ok())
-            .map(|m| m.len())
-            .sum();
+        let bytes = written_bytes(&self.dir);
         Status { id: self.id.clone(), dir: self.dir.clone(), elapsed: self.started.elapsed(), bytes }
     }
 
@@ -705,5 +710,19 @@ mod tests {
         };
         assert!(matches!(start(p, tx), Err(StartError::Mux(_))));
         assert_eq!(std::fs::read_dir(tmp.path()).unwrap().count(), 0, "启动失败后目录必须是空的");
+    }
+
+    #[test]
+    fn written_bytes_follows_track_files_that_are_still_being_written() {
+        // ffmpeg 写轨道文件时不刷盘：目录项里的大小要等文件关闭才更新，读目录项会一直得到 0
+        use std::io::Write;
+        let tmp = tempfile::tempdir().unwrap();
+        let mut video = std::fs::File::create(tmp.path().join("video.mkv")).unwrap();
+        let mut mic = std::fs::File::create(tmp.path().join("mic.mka")).unwrap();
+        video.write_all(&vec![0u8; 3_000_000]).unwrap();
+        mic.write_all(&vec![0u8; 500_000]).unwrap();
+        std::fs::write(tmp.path().join("session.json"), b"{}").unwrap();
+        assert_eq!(written_bytes(tmp.path()), 3_500_000, "只数轨道文件，并且要是真实大小");
+        drop((video, mic));
     }
 }
