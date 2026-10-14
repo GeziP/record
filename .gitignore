@@ -22,3 +22,6 @@
 *.pem
 *.pfx
 *.log
+
+# S4 回声消除评测小程序的编译产物（也可以用 CARGO_TARGET_DIR 指到仓库之外）
+/scripts/s4/aec-harness/target/
