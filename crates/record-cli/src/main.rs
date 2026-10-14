@@ -31,6 +31,12 @@ fn main() -> Result<()> {
         (Some("s2"), Some("monitors")) => s2::monitors_cmd(),
         (Some("s2"), Some("selftest")) => s2::selftest_cmd(&args),
         (Some("s2"), Some("probe")) => s2::probe_cmd(&args),
+        (Some("s2"), Some("window")) => s2bench::window_cmd(&args),
+        (Some("s2"), Some("bench")) => s2bench::bench_cmd(&args),
+        (Some("s3"), Some("stimulus")) => s3::stimulus_cmd(&args),
+        (Some("s3"), Some("analyze")) => s3::analyze_cmd(&args),
+        (Some("record"), _) => rec::record_cmd(&args),
+        (Some("recover"), _) => rec::recover_cmd(&args),
         _ => bail!("{USAGE}"),
     }
 }
@@ -57,4 +63,20 @@ const USAGE: &str = "用法：record-cli <命令>
                                       在目标显示器中央放测试窗口，验证 GPU 转换的颜色、黑边与画面陈旧程度
                                       （--size 取显示器整屏大小再加 --static，可验证桌面完全静止时的首帧）
   s2 probe [--fps 15] [--size 960x540] [--monitor ...] [--out DIR]
-                                      排查用：对照 GDI 读到的颜色与桌面复制采到的颜色，导出只含测试窗口的裁剪图";
+                                      排查用：对照 GDI 读到的颜色与桌面复制采到的颜色，导出只含测试窗口的裁剪图
+  s2 window [--secs 30] [--size 960x540] [--monitor ...]
+                                      只放一个动画测试窗口（bench 把它当子进程）
+  record [--secs 30] [--out DIR] [--no-video] [--no-mic] [--no-system] [--encoder auto|nvenc|qsv|amf|software]
+         [--fps 15] [--monitor primary|foreground|N] [--config 文件] [--inject stall:mic:10@5,kill:video@20]
+                                      用录制引擎录一场（默认写到 %TEMP%\record-sessions），结束后打印诊断；
+                                      --inject 在指定秒数注入故障（暂停采集线程或杀掉编码器）
+  recover [--out DIR | --session DIR]
+                                      扫描保存目录并修复上次崩溃留下的会话
+  s2 bench [--secs 30] [--fps 15] [--encoder auto|nvenc|qsv|amf|software] [--report 10] [--limit 5]
+           [--size 960x540] [--monitor ...] [--no-window]
+                                      真实编码器下的 CPU 与吞吐（输出写到 NUL）；需要 ffmpeg（RECORD_FFMPEG）
+  s3 stimulus [--secs 60] [--interval 2.0083] [--lead 3] [--freq 1000] [--naive] [--device 设备ID] [--monitor ...]
+                                      屏幕中央闪白并在测试音出声的那一刻响起（间隔与帧周期错开），用来测量画面与声音的同步；
+                                      --naive 改成写入即闪（测出来的就是播放设备的延迟）
+  s3 analyze <meeting.mp4> [--roi 0.35,0.35,0.3,0.3] [--freq 1000] [--limit-ms 80] [--search 1.0] [--verbose]
+                                      从成品里找闪屏与测试音，配对后估计画面比声音晚多少毫秒（需要 ffmpeg 与 ffprobe）";
