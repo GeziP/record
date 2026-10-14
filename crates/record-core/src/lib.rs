@@ -1,5 +1,6 @@
 pub mod clock;
 pub mod config;
+pub mod controller;
 pub mod dsp;
 pub mod geometry;
 pub mod health;
