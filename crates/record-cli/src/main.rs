@@ -8,6 +8,7 @@ mod response;
 mod s1;
 mod s2;
 mod s2bench;
+mod s3;
 mod selftest;
 mod wav;
 
