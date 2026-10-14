@@ -6,6 +6,7 @@ pub mod ffmpeg_args;
 pub mod geometry;
 pub mod health;
 pub mod hotkey;
+pub mod limits;
 pub mod pacer;
 pub mod session;
 pub mod syncprobe;
