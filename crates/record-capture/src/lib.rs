@@ -2,3 +2,4 @@
 #![cfg(windows)]
 
 pub mod com;
+pub mod qpc;
