@@ -10,6 +10,10 @@ build = "build.rs"
 name = "record_shell"
 path = "src/lib.rs"
 
+[[bin]]
+name = "record-s5"
+path = "src/bin/s5.rs"
+
 [build-dependencies]
 tauri-build = "2"
 
