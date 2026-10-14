@@ -5,6 +5,7 @@ pub mod disk;
 pub mod events;
 pub mod fault;
 pub mod lock;
+pub mod meeting;
 mod slot;
 mod snapshot;
 
