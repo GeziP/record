@@ -3,5 +3,6 @@ pub mod dsp;
 pub mod geometry;
 pub mod health;
 pub mod hotkey;
+pub mod pacer;
 pub mod syncprobe;
 pub mod timeline;
