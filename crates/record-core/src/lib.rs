@@ -5,4 +5,5 @@ pub mod health;
 pub mod hotkey;
 pub mod pacer;
 pub mod syncprobe;
+pub mod testpattern;
 pub mod timeline;
