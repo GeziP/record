@@ -2,6 +2,7 @@ pub mod clock;
 pub mod config;
 pub mod controller;
 pub mod dsp;
+pub mod ffmpeg_args;
 pub mod geometry;
 pub mod health;
 pub mod hotkey;
