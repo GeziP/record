@@ -235,7 +235,9 @@ git commit -m "chore(shell): record-shell 骨架（Tauri v2、托盘与插件依
 
 **目标：** 在写正式的外壳之前，先用一个小程序 `record-s5` 把设计文档 §10.1 的 S5 问清楚：程序没有窗口时能不能常驻、托盘图标能不能出来、全局热键在各种前台窗口下能不能触发、热键冲突能不能被检测到、单实例、开机自启、系统通知。`scripts/s5-check.ps1` 启动它，用模拟按键触发热键，只读它自己的日志来判定。
 
-检查脚本会**模拟键盘按键**（Ctrl+Alt+R / S / Q / W），并在屏幕上短暂放一个铺满屏幕的置顶窗口，运行约半分钟；期间不要动键盘和鼠标，也不要让别的程序抢焦点。它还会弹一条系统通知、临时写入再还原一条开机自启项，结束时把自己启动的进程收掉，并确认没有留下开机自启项。
+检查脚本会**模拟键盘按键**（Ctrl+Alt+R / S / Q / F9），并在屏幕上短暂放一个铺满屏幕的置顶窗口，运行约半分钟；期间不要动键盘和鼠标，也不要让别的程序抢焦点。它还会弹一条系统通知、临时写入再还原一条开机自启项，结束时把自己启动的进程收掉，并确认没有留下开机自启项。
+
+其中 `Ctrl+Alt+F9` 只是探针里用来“开关一个窗口”的测试热键，产品不用它；产品的默认热键仍是 `Ctrl+Alt+R / S / Q`。最初这个测试热键用的是 `Ctrl+Alt+W`，但在作者的机器上它在探针启动前就已被别的程序占着（`RegisterHotKey` 错误码 1409；那台机器上运行着微信，它默认的“激活微信”快捷键正是这个组合，很可能就是它，但没有逐一确认持有者），“热键打开窗口”等 4 项检查因此失败。把 Ctrl+Alt+ 加 A–Z、F1–F12 逐个探测了一遍，只有 W 被占，所以换成了 F9。你的机器上如果 F9 也被占（脚本第一部分会报“启动前 Ctrl+Alt+F9 没被占用”失败），同样换一个空闲的组合，`s5.rs`（注册与判断两处）和脚本（探测表、注册检查、模拟按键三处）要一起改。
 
 | 设计文档 §10.1 S5 的检查项 | 怎么验证 | 本任务里 |
 |---|---|---|
@@ -286,7 +288,7 @@ path = "src/bin/s5.rs"
 //! 用法：`record-s5 [--log 文件] [--hotkeys "Ctrl+Alt+R,Ctrl+Alt+S,Ctrl+Alt+Q"] [--secs N] [--notify] [--autostart-roundtrip]`
 //!
 //! 每一件事的结果都带着时间写进日志（同时打印），由脚本去检查；程序本身不录任何东西。
-//! 热键 `Ctrl+Alt+W` 额外用来开关一个窗口，用来验证“关掉窗口后进程仍然常驻”。
+//! 热键 `Ctrl+Alt+F9` 额外用来开关一个窗口，用来验证“关掉窗口后进程仍然常驻”（不用 `Ctrl+Alt+W`：它常被即时通讯软件占作“激活窗口”）。
 
 use std::io::Write;
 use std::sync::{Arc, Mutex};
@@ -352,7 +354,7 @@ fn main() {
                     let log = Arc::clone(&log);
                     move |app, shortcut, event| {
                         log.line(format!("热键 {shortcut} {:?}", event.state()));
-                        if event.state() == ShortcutState::Pressed && shortcut.matches(Modifiers::CONTROL | Modifiers::ALT, Code::KeyW) {
+                        if event.state() == ShortcutState::Pressed && shortcut.matches(Modifiers::CONTROL | Modifiers::ALT, Code::F9) {
                             match app.get_webview_window("probe") {
                                 Some(w) => log.line(format!("关闭窗口：{:?}", w.close())),
                                 None => log.line(format!(
@@ -380,7 +382,7 @@ fn main() {
                 app.manage(tray.build(app)?);
                 log.line("托盘图标已创建");
 
-                for text in hotkeys.split(',').map(str::trim).chain(["Ctrl+Alt+W"]) {
+                for text in hotkeys.split(',').map(str::trim).chain(["Ctrl+Alt+F9"]) {
                     match app.global_shortcut().register(text) {
                         Ok(()) => log.line(format!("热键 {text} 注册成功")),
                         Err(e) => log.line(format!("热键 {text} 注册失败：{e}")),
@@ -481,7 +483,7 @@ $runBefore = (Get-ItemProperty $runKey).PSObject.Properties.Name | Where-Object 
 
 # ---- 0. 启动前：默认热键有没有被别的软件占着 ----
 $mods = 0x0002 -bor 0x0001 -bor 0x4000   # Ctrl + Alt + NoRepeat
-foreach ($k in @{ R = 0x52; S = 0x53; Q = 0x51; W = 0x57 }.GetEnumerator()) {
+foreach ($k in @{ R = 0x52; S = 0x53; Q = 0x51; F9 = 0x78 }.GetEnumerator()) {
     $ok = [S5Native]::RegisterHotKey([IntPtr]::Zero, 100, $mods, $k.Value)
     $err = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
     if ($ok) { [void][S5Native]::UnregisterHotKey([IntPtr]::Zero, 100) }
@@ -495,7 +497,7 @@ try {
     Check '进程启动并就绪（无窗口）' ($ready.Count -gt 0 -and -not $proc.HasExited) ''
     $lines = Read-Log
     Check '托盘图标 API 创建成功' ([bool]($lines -match '托盘图标已创建')) ''
-    foreach ($h in 'Ctrl+Alt+R', 'Ctrl+Alt+S', 'Ctrl+Alt+Q', 'Ctrl+Alt+W') {
+    foreach ($h in 'Ctrl+Alt+R', 'Ctrl+Alt+S', 'Ctrl+Alt+Q', 'Ctrl+Alt+F9') {
         Check "热键 $h 注册" ([bool]($lines -match "热键 $([regex]::Escape($h)) 注册成功")) (($lines -match "热键 $([regex]::Escape($h)) 注册失败") -join '')
     }
     Check '通知 API 调用成功' ([bool]($lines -match '通知：Ok')) (($lines -match '通知：') -join '')
@@ -562,7 +564,7 @@ try {
 
     # ---- 7. 窗口：打开后关掉，进程应继续常驻 ----
     $n = (Read-Log).Count
-    Press-Chord 0x57
+    Press-Chord 0x78   # F9
     $open = Wait-Log '打开窗口：Ok' $n 8000
     Check '热键打开窗口' ($open.Count -gt 0) ($open -join ' ')
     Start-Sleep -Seconds 3
@@ -622,7 +624,7 @@ cargo build -p record-shell --bin record-s5
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\s5-check.ps1
 ```
 
-预期：每项一行 `[通过]`，没有 `[失败]`，最后 `汇总：通过 29 项，失败 0 项`。中间有几行 `INFO`，是空闲与开着窗口时的内存和 CPU 数字，要记进设计文档。参考（本机）：空闲时工作集约 24 MB、私有内存约 4 MB、10 秒内 CPU 0.00%；开着设置窗口时主进程约 34 MB，另有 6 个 WebView2 子进程合计约 356 MB；关窗后子进程全部退出，主进程仍约 34 MB。**有 `[失败]` 就先看它后面的说明：热键被别的程序占着、通知被系统勿扰模式吞掉都是环境原因，处理环境，不要改脚本让它通过。**
+预期：每项一行 `[通过]`，没有 `[失败]`，最后 `汇总：通过 29 项，失败 0 项`。中间有几行 `INFO`，是空闲与开着窗口时的内存和 CPU 数字，要记进设计文档。参考（本机）：空闲时工作集约 24 MB、私有内存约 4 MB、10 秒内 CPU 0.00%；开着设置窗口时主进程约 34 MB，另有 6 个 WebView2 子进程合计约 356～375 MB（两次测量）；关窗后子进程全部退出，主进程仍约 34 MB。**有 `[失败]` 就先看它后面的说明：热键被别的程序占着、通知被系统勿扰模式吞掉都是环境原因，处理环境，不要删检查项、不要放宽判断来让它通过；只有探针里用来开关窗口的测试热键 `Ctrl+Alt+F9` 被占着时，才可以换一个空闲的组合（见上面的说明）。产品的 `Ctrl+Alt+R / S / Q` 被占着是要如实报告的发现，不能这样绕。**
 
 **核对设计文档里的结论**（§6.2 的“S5 结果”、§10.5 S5 一行、§12）：热键默认值 `Ctrl+Alt+R / S / Q` 保持；注册策略用“常驻注册”；管理员权限窗口在前台时热键是否生效、独占全屏、重启后自启、托盘外观这几项没有自动覆盖，写“未验证”；Windows 11 默认把新托盘图标收进溢出区，首次运行向导里要提示用户把它拖到任务栏；WebView2 只在设置窗口打开期间占内存（脚本里的 `INFO` 行），常驻时不占。作者已经按这些写好了；你这次的数字不同就改成你的，并写明日期（用 `Get-Date` 取）。
 
@@ -3665,7 +3667,7 @@ git commit -m "feat(app): 设置窗口（向导与完整设置）"
 
 | 部分 | 检查什么 |
 |---|---|
-| `basic` | 热键开始 → 托盘变录制中、连按只开一场、录制中 `session.json` 是 recording、托盘提示随时间更新；热键保存 → 回到待命、`meeting.mp4` 里 1 路画面 1 路混音；保存并退出；被杀后重启自动修复并通知（安静模式也通知）；标准模式弹开始 / 保存通知，安静模式不弹；标准模式下连续再录 5 场（每场的开始与保存都弹系统通知）进程不崩溃——这是验收时实测抓到的崩溃，原因与修法见计划 A2 的 `com` 一节 |
+| `basic` | 热键开始 → 托盘变录制中、连按只开一场、录制中 `session.json` 是 recording、托盘提示随时间更新、日志写明已请求保持唤醒且整机电源状态里“系统不休眠”“显示器常亮”两位都在；热键保存 → 回到待命、日志写明已撤销保持唤醒、`meeting.mp4` 里 1 路画面 1 路混音；保存并退出；被杀后系统自动收回电源请求，重启后自动修复并通知（安静模式也通知）；标准模式弹开始 / 保存通知，安静模式不弹；标准模式下连续再录 5 场（每场的开始与保存都弹系统通知）进程不崩溃——这是验收时实测抓到的崩溃，原因与修法见计划 A2 的 `com` 一节 |
 | `events` | 用窗口消息模拟睡眠、唤醒、关机：保存完才返回、提示“因睡眠已保存”、关机保存后进程退出、唤醒后热键仍可用 |
 | `failures` | 磁盘剩余空间不足时开始失败并弹通知、不留会话目录；热键被别的程序占用时写明原因、菜单里标出冲突、另外两个照常；热键配置写错时三个都不注册并只说一遍原因、不改配置文件；配置读不懂时仍能启动并保留原文件 |
 | `ui` | 没有配置文件时自动弹向导（三项、同意提示、托盘固定提示）、点“完成”写配置并关窗；单实例唤起设置窗口；录入热键时全局热键暂停、录完恢复、相同组合不保存、被占用的组合保存后标出；保存后新热键生效旧的失效；不认识的配置项原样保留；开机自启勾选与取消对应 Run 项；录入中途关窗恢复热键 |
@@ -3679,7 +3681,7 @@ git commit -m "feat(app): 设置窗口（向导与完整设置）"
 - [ ] **步骤 1：创建 `scripts/shell-check.ps1`**
 
 ```powershell
-# 外壳（record.exe）的真机检查：热键开始与保存、托盘与通知的决定、退出与崩溃恢复、睡眠与关机事件、
+# 外壳（record.exe）的真机检查：热键开始与保存、托盘与通知的决定、录制期间保持唤醒、退出与崩溃恢复、睡眠与关机事件、
 # 启动失败、热键冲突、配置错误、首次向导与设置窗口。
 #
 # 用法：
@@ -3713,6 +3715,14 @@ public static class ShellNative {
     [DllImport("user32.dll")] public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindowW(string cls, string title);
     [DllImport("user32.dll")] public static extern IntPtr SendMessageW(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("powrprof.dll")] static extern uint CallNtPowerInformation(int level, IntPtr input, uint inputLen, out uint output, uint outputLen);
+    // 整机汇总的“执行状态”（各进程电源请求叠加的结果）：0x1 系统不因空闲休眠，0x2 显示器常亮。不需要管理员权限。
+    public static uint ExecutionState() {
+        uint state;
+        uint status = CallNtPowerInformation(16, IntPtr.Zero, 0, out state, 4);   // 16 = SystemExecutionState
+        if (status != 0) throw new Exception("CallNtPowerInformation 失败：0x" + status.ToString("X"));
+        return state;
+    }
     delegate bool EnumProc(IntPtr h, IntPtr p);
     [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc cb, IntPtr p);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
@@ -3750,6 +3760,9 @@ function Check([string]$name, [bool]$ok, [string]$detail = '') {
     '{0}  {1}  {2}' -f $(if ($ok) { '[通过]' } else { '[失败]' }), $name, $detail
 }
 function Info([string]$text) { 'INFO ' + $text }
+# 整机电源状态（各进程电源请求叠加的结果）里“之前没有、现在有”的位，只看 0x1 系统不休眠与 0x2 显示器常亮。
+# 别的程序也可能占着请求，所以“撤销了没有”只看多出来的位：它们只能是本程序造成的。
+function Power-Leftover([int]$before, [int]$now) { $now -band 3 -band (3 -bxor ($before -band 3)) }
 
 # ───────────── 辅助：隔离环境、启动、日志、按键 ─────────────
 $work = Join-Path $env:TEMP 'record-shell'
@@ -3923,6 +3936,7 @@ try {
         Check '待命时 CPU 低于 1%' ($idleCpu -lt 1) ('{0:N2}%' -f $idleCpu)
 
         # 热键开始：连按两次（间隔约 0.2 秒）只应开始一场
+        $power0 = [int][ShellNative]::ExecutionState()
         $n = (Read-Log $box).Count
         Press-Chord 'Ctrl', 'Alt', 'R'
         Press-Chord 'Ctrl', 'Alt', 'R'
@@ -3934,9 +3948,16 @@ try {
         Check '连按两次只开始一场' ((Sessions $box).Count -eq 1) "会话数 $((Sessions $box).Count)"
         $dir = (Sessions $box)[0].FullName
         Check '录制中 session.json 的状态是 recording' ((Read-Session $dir).state -eq 'recording') ''
+        $held = Wait-Log $box '已请求保持唤醒' $n 3000
+        Check '录制中：日志写明已请求保持唤醒（显示器常亮、系统不因空闲休眠）' ($held.Count -gt 0) ($held -join ' ')
+        $power1 = [int][ShellNative]::ExecutionState()
+        Check '录制中：整机电源状态里“系统不休眠”“显示器常亮”两位都在' (($power1 -band 3) -eq 3) ('录制前 0x{0:X}，录制中 0x{1:X}' -f $power0, $power1)
         Start-Sleep -Seconds 4
         $tips = @(Read-Log $box | Where-Object { $_ -match '托盘提示更新.*录制中' })
         Check '录制中托盘提示随时间更新' ($tips.Count -ge 2) "提示更新 $($tips.Count) 次，最后一条：$($tips[-1])"
+        # ffmpeg 写文件不刷盘，目录项里的大小会一直是 0；提示里的“已写入”要读真实大小才会增长
+        $shownMb = if ($tips.Count -gt 0 -and $tips[-1] -match '已写入 (\d+) MB') { [int]$Matches[1] } else { -1 }
+        Check '录制中托盘提示里的“已写入”随录制增长（不是一直 0 MB）' ($shownMb -gt 0) "最后一条：$($tips[-1])"
         $recCpu = Cpu-Percent $app 6
         Info ('录制中：外壳进程 CPU {0:N1}%（单核口径）' -f $recCpu)
 
@@ -3945,6 +3966,9 @@ try {
         Press-Chord 'Ctrl', 'Alt', 'S'
         $idle = Wait-Log $box '托盘图标更新.*Standby' $n 20000
         Check '热键保存 → 托盘回到待命' ($idle.Count -gt 0) ''
+        $released = Wait-Log $box '已撤销保持唤醒' $n 5000
+        $power2 = [int][ShellNative]::ExecutionState()
+        Check '保存后：日志写明已撤销保持唤醒，录制前没有的电源位都清掉了' (($released.Count -gt 0) -and ((Power-Leftover $power0 $power2) -eq 0)) ('录制前 0x{0:X}，录制中 0x{1:X}，保存后 0x{2:X}' -f $power0, $power1, $power2)
         $saved = Wait-Log $box '通知.*show=true.*已保存' $n 3000
         Check '标准模式：保存时弹通知' ($saved.Count -gt 0) ($saved -join ' ')
         $meeting = Join-Path $dir 'meeting.mp4'
@@ -3992,6 +4016,7 @@ try {
         Write-Config $box (Standard-Config $box 'quiet')
         $app = Start-App $box
         [void](Ready $box $app)
+        $powerK = [int][ShellNative]::ExecutionState()
         $n = (Read-Log $box).Count
         Press-Chord 'Ctrl', 'Alt', 'R'
         Check '第三场开始' ((Wait-Log $box '托盘图标更新.*Recording' $n 10000).Count -gt 0) ''
@@ -4002,6 +4027,8 @@ try {
         Stop-Process -Id $app.Id -Force
         [void]$app.WaitForExit(5000)
         Start-Sleep -Seconds 2
+        $powerKilled = [int][ShellNative]::ExecutionState()
+        Check '被杀后：系统自动收回了电源请求（录制前没有的位都清掉了）' ((Power-Leftover $powerK $powerKilled) -eq 0) ('录制前 0x{0:X}，被杀后 0x{1:X}' -f $powerK, $powerKilled)
         Check '被杀后 session.json 仍是 recording（没来得及收尾）' ((Read-Session $third).state -eq 'recording') ''
         $app = Start-App $box
         Check '重新启动并就绪' (Ready $box $app) ''
@@ -4288,7 +4315,7 @@ $env:RECORD_FFMPEG = (Resolve-Path vendor\ffmpeg\bin\ffmpeg.exe).Path
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\shell-check.ps1
 ```
 
-预期：每项一行 `[通过]`，没有 `[失败]`，最后 `汇总：通过 92 项，失败 0 项`，并列出设置窗口截图的位置。参考（本机）：待命时工作集约 20 MB、CPU 0.00%；录制中外壳进程 CPU 个位数百分比（单核口径，真正吃 CPU 的是 ffmpeg，见计划 A3 的 S2 压力测试）；睡眠、关机通知的处理（含保存本场）各约 0.3 秒。**失败时先看那一项后面的说明；热键被别的程序占着、系统通知被“勿扰”吞掉都是环境原因，处理环境，不要改脚本让它通过。**
+预期：每项一行 `[通过]`，没有 `[失败]`，最后 `汇总：通过 97 项，失败 0 项`，并列出设置窗口截图的位置。参考（本机，两次测量）：待命时工作集 19.8～24.4 MB、私有内存 6.6～7.2 MB；录制中外壳进程 CPU 5.2%～7.0%（单核口径，真正吃 CPU 的是 ffmpeg，见计划 A3 的 S2 压力测试）；睡眠、关机通知的处理（含保存本场）各约 0.3～0.4 秒。**失败时先看那一项后面的说明；热键被别的程序占着、系统通知被“勿扰”吞掉都是环境原因，处理环境，不要改脚本让它通过。**
 
 - [ ] **步骤 5：删除脚本留在临时目录的截图**
 
@@ -4316,7 +4343,7 @@ git commit -m "test(shell): 外壳的真机检查脚本"
 | 设计文档 §10.4 的完成标准 | 怎么验证 | 状态 |
 |---|---|---|
 | 热键可开始与保存；静默无弹窗；托盘状态正确 | `shell-check` 的 `basic`（含通知取舍、托盘图标状态的日志）；托盘图标外观与右键菜单需人眼看 | 自动 / **人工（外观）** |
-| 60 分钟录制：无丢音，音画偏差 ≤ 80 ms，CPU 占用 < 5%，文件可播放 | 60 分钟人工长跑（见下），30 秒与 40 秒的自动版本已在 A3 | **人工，约 1 小时** |
+| 60 分钟录制：无丢音，音画偏差 ≤ 80 ms，CPU 占用 < 5%，文件可播放 | 60 分钟人工长跑（见下），30 秒与 40 秒的自动版本已在 A3 | **人工，约 1 小时**（作者做过缩小的安静版，见下） |
 | 强杀进程后可恢复 | `shell-check` 的 `basic`（杀掉 → 重启 → recovered 且有成品）与 A3 的强杀恢复 | 自动 |
 | 设备切换 | A3 的“拔掉设备”人工项；`device_changes` 计数 | **人工，未验证** |
 | 锁屏、UAC | 录制中锁屏、触发 UAC，看重复帧计数与是否继续录 | **人工，未验证** |
@@ -4359,6 +4386,7 @@ git commit -m "test(shell): 外壳的真机检查脚本"
 3. 运行 `record.exe`：没有窗口，只有托盘图标。第一次运行会弹出设置向导（保存位置、热键、开机自启）。
 4. 默认热键：`Ctrl+Alt+R` 开始，`Ctrl+Alt+S` 保存并结束本场，`Ctrl+Alt+Q` 保存并退出程序，都可以在设置里改。
 5. 每场录制一个目录，在保存位置下（默认 `<视频库>\Record`）：`video.mkv`、`mic.mka`、`system.mka`、`meeting.mp4`、`session.json`。配置在 `%APPDATA%\record\config.toml`，日志在 `%LOCALAPPDATA%\record\logs\`。
+6. 录制期间，显示器和系统不会因为久不动鼠标而休眠（显示器一休眠，桌面复制就拿不到画面，成品里只剩声音）；保存或结束后恢复系统自己的设置。这只拦空闲计时：自己点“睡眠”或合上盖子照常睡眠，睡眠前本场会先保存（用窗口消息模拟验证过，真机睡眠没有验证，见设计文档 §10.5）。
 
 ## 使用边界
 ```
@@ -4407,6 +4435,8 @@ Start-Process target\release\record.exe
 **这一步需要真机：** 1. 启动 `target\release\record.exe`，按 `Ctrl+Alt+R` 开始；2. 另开一个 PowerShell 窗口，运行 `cargo run -q -p record-cli -- s3 stimulus --secs 3560` 产生闪屏与测试音；3. 开始后约 1 分钟记下 `record` 与全部 `ffmpeg` 进程的 `TotalProcessorTime` 之和与当时时刻，结束前（约 59 分钟）再记一次；4. 按 `Ctrl+Alt+S` 保存；5. 对新生成的 `meeting.mp4` 运行 `cargo run -q -p record-cli -- s3 analyze <meeting.mp4路径>`。
 
 预期：`s3 analyze` 的结论为“通过”（偏移在 80 ms 内、没有随时间漂移）；两次 CPU 时间之差除以经过的秒数与逻辑处理器数，得到整机占用，要 < 5%；`session.json` 里 `dropped_audio_samples` 为 0、`large_gap_events` 为 0；`meeting.mp4` 能播放（用 ffprobe 看结构即可，不要去听）。结果与未通过的项一起写进设计文档 10.5 里“10.4 完成标准的现状”那张表。
+
+**作者做过的缩小版（安静版，2026-10-14）：** 只录真实桌面与系统声音，不闪屏、不放测试音、不录麦克风，也不测音画同步：`target\release\record-cli.exe record --secs 3600 --no-mic --out <目录>`，另用脚本每分钟记录 CPU、工作集与输出大小；结束后只用 ffprobe 与 `ffmpeg -f null` 看结构和能否完整解码，用完删除录出的内容。结果在设计文档 10.5 的“60 分钟安静版长跑”。上面这一步的完整版（外壳进程、闪屏与测试音、音画同步、麦克风）仍然没有做。
 
 **核对并补全设计文档：** 设计文档的 10.5（spike 与验收的结果）、12（本机环境，已脱敏）、16.3（实现与原设计的差别）已经记录了作者在同一台开发机上做完这些步骤的结果。你这次跑出的数字如果不一样，就改文档里的数字（脱敏：不写设备名与 GUID）；10.1 与 10.4 里每个“人工 / 未验证”的条目，做完一条，就在 10.5 里把它从“未验证”改成“已验证（日期、结果）”，没做的保持“未验证”并写明原因。日期用命令取（`Get-Date`），不要凭感觉写。
 

@@ -1,0 +1,24 @@
+# 构建产物
+/target/
+/app/dist/
+/app/node_modules/
+/app/src-tauri/gen/
+
+# 开发用的 ffmpeg：scripts/fetch-ffmpeg.ps1 下载，不入库
+/vendor/ffmpeg/
+
+# 公开仓库：绝不提交录音录像、转写稿、模型和密钥
+*.mkv
+*.mka
+*.mp4
+*.wav
+*.flac
+*.onnx
+*.gguf
+/models/
+*.toml.broken
+.env
+.env.*
+*.pem
+*.pfx
+*.log
