@@ -5,5 +5,6 @@ pub mod audio;
 pub mod com;
 pub mod cpu;
 pub mod devices;
+pub mod monitor;
 pub mod qpc;
 pub mod render;
