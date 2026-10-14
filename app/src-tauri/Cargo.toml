@@ -11,6 +11,10 @@ name = "record_shell"
 path = "src/lib.rs"
 
 [[bin]]
+name = "record"
+path = "src/main.rs"
+
+[[bin]]
 name = "record-s5"
 path = "src/bin/s5.rs"
 
