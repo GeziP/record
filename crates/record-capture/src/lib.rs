@@ -6,5 +6,7 @@ pub mod com;
 pub mod cpu;
 pub mod devices;
 pub mod monitor;
+pub mod pipeline;
 pub mod qpc;
 pub mod render;
+pub mod tonemap;
