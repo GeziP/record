@@ -2,5 +2,6 @@
 
 pub mod error;
 pub mod locate;
+pub mod process;
 
 pub use error::MuxError;
