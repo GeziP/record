@@ -235,7 +235,9 @@ git commit -m "chore(shell): record-shell 骨架（Tauri v2、托盘与插件依
 
 **目标：** 在写正式的外壳之前，先用一个小程序 `record-s5` 把设计文档 §10.1 的 S5 问清楚：程序没有窗口时能不能常驻、托盘图标能不能出来、全局热键在各种前台窗口下能不能触发、热键冲突能不能被检测到、单实例、开机自启、系统通知。`scripts/s5-check.ps1` 启动它，用模拟按键触发热键，只读它自己的日志来判定。
 
-检查脚本会**模拟键盘按键**（Ctrl+Alt+R / S / Q / W），并在屏幕上短暂放一个铺满屏幕的置顶窗口，运行约半分钟；期间不要动键盘和鼠标，也不要让别的程序抢焦点。它还会弹一条系统通知、临时写入再还原一条开机自启项，结束时把自己启动的进程收掉，并确认没有留下开机自启项。
+检查脚本会**模拟键盘按键**（Ctrl+Alt+R / S / Q / F9），并在屏幕上短暂放一个铺满屏幕的置顶窗口，运行约半分钟；期间不要动键盘和鼠标，也不要让别的程序抢焦点。它还会弹一条系统通知、临时写入再还原一条开机自启项，结束时把自己启动的进程收掉，并确认没有留下开机自启项。
+
+其中 `Ctrl+Alt+F9` 只是探针里用来“开关一个窗口”的测试热键，产品不用它；产品的默认热键仍是 `Ctrl+Alt+R / S / Q`。最初这个测试热键用的是 `Ctrl+Alt+W`，但在作者的机器上它在探针启动前就已被别的程序占着（`RegisterHotKey` 错误码 1409；那台机器上运行着微信，它默认的“激活微信”快捷键正是这个组合，很可能就是它，但没有逐一确认持有者），“热键打开窗口”等 4 项检查因此失败。把 Ctrl+Alt+ 加 A–Z、F1–F12 逐个探测了一遍，只有 W 被占，所以换成了 F9。你的机器上如果 F9 也被占（脚本第一部分会报“启动前 Ctrl+Alt+F9 没被占用”失败），同样换一个空闲的组合，`s5.rs`（注册与判断两处）和脚本（探测表、注册检查、模拟按键三处）要一起改。
 
 | 设计文档 §10.1 S5 的检查项 | 怎么验证 | 本任务里 |
 |---|---|---|
@@ -286,7 +288,7 @@ path = "src/bin/s5.rs"
 //! 用法：`record-s5 [--log 文件] [--hotkeys "Ctrl+Alt+R,Ctrl+Alt+S,Ctrl+Alt+Q"] [--secs N] [--notify] [--autostart-roundtrip]`
 //!
 //! 每一件事的结果都带着时间写进日志（同时打印），由脚本去检查；程序本身不录任何东西。
-//! 热键 `Ctrl+Alt+W` 额外用来开关一个窗口，用来验证“关掉窗口后进程仍然常驻”。
+//! 热键 `Ctrl+Alt+F9` 额外用来开关一个窗口，用来验证“关掉窗口后进程仍然常驻”（不用 `Ctrl+Alt+W`：它常被即时通讯软件占作“激活窗口”）。
 
 use std::io::Write;
 use std::sync::{Arc, Mutex};
@@ -352,7 +354,7 @@ fn main() {
                     let log = Arc::clone(&log);
                     move |app, shortcut, event| {
                         log.line(format!("热键 {shortcut} {:?}", event.state()));
-                        if event.state() == ShortcutState::Pressed && shortcut.matches(Modifiers::CONTROL | Modifiers::ALT, Code::KeyW) {
+                        if event.state() == ShortcutState::Pressed && shortcut.matches(Modifiers::CONTROL | Modifiers::ALT, Code::F9) {
                             match app.get_webview_window("probe") {
                                 Some(w) => log.line(format!("关闭窗口：{:?}", w.close())),
                                 None => log.line(format!(
@@ -380,7 +382,7 @@ fn main() {
                 app.manage(tray.build(app)?);
                 log.line("托盘图标已创建");
 
-                for text in hotkeys.split(',').map(str::trim).chain(["Ctrl+Alt+W"]) {
+                for text in hotkeys.split(',').map(str::trim).chain(["Ctrl+Alt+F9"]) {
                     match app.global_shortcut().register(text) {
                         Ok(()) => log.line(format!("热键 {text} 注册成功")),
                         Err(e) => log.line(format!("热键 {text} 注册失败：{e}")),
@@ -481,7 +483,7 @@ $runBefore = (Get-ItemProperty $runKey).PSObject.Properties.Name | Where-Object 
 
 # ---- 0. 启动前：默认热键有没有被别的软件占着 ----
 $mods = 0x0002 -bor 0x0001 -bor 0x4000   # Ctrl + Alt + NoRepeat
-foreach ($k in @{ R = 0x52; S = 0x53; Q = 0x51; W = 0x57 }.GetEnumerator()) {
+foreach ($k in @{ R = 0x52; S = 0x53; Q = 0x51; F9 = 0x78 }.GetEnumerator()) {
     $ok = [S5Native]::RegisterHotKey([IntPtr]::Zero, 100, $mods, $k.Value)
     $err = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
     if ($ok) { [void][S5Native]::UnregisterHotKey([IntPtr]::Zero, 100) }
@@ -495,7 +497,7 @@ try {
     Check '进程启动并就绪（无窗口）' ($ready.Count -gt 0 -and -not $proc.HasExited) ''
     $lines = Read-Log
     Check '托盘图标 API 创建成功' ([bool]($lines -match '托盘图标已创建')) ''
-    foreach ($h in 'Ctrl+Alt+R', 'Ctrl+Alt+S', 'Ctrl+Alt+Q', 'Ctrl+Alt+W') {
+    foreach ($h in 'Ctrl+Alt+R', 'Ctrl+Alt+S', 'Ctrl+Alt+Q', 'Ctrl+Alt+F9') {
         Check "热键 $h 注册" ([bool]($lines -match "热键 $([regex]::Escape($h)) 注册成功")) (($lines -match "热键 $([regex]::Escape($h)) 注册失败") -join '')
     }
     Check '通知 API 调用成功' ([bool]($lines -match '通知：Ok')) (($lines -match '通知：') -join '')
@@ -562,7 +564,7 @@ try {
 
     # ---- 7. 窗口：打开后关掉，进程应继续常驻 ----
     $n = (Read-Log).Count
-    Press-Chord 0x57
+    Press-Chord 0x78   # F9
     $open = Wait-Log '打开窗口：Ok' $n 8000
     Check '热键打开窗口' ($open.Count -gt 0) ($open -join ' ')
     Start-Sleep -Seconds 3
@@ -622,7 +624,7 @@ cargo build -p record-shell --bin record-s5
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\s5-check.ps1
 ```
 
-预期：每项一行 `[通过]`，没有 `[失败]`，最后 `汇总：通过 29 项，失败 0 项`。中间有几行 `INFO`，是空闲与开着窗口时的内存和 CPU 数字，要记进设计文档。参考（本机）：空闲时工作集约 24 MB、私有内存约 4 MB、10 秒内 CPU 0.00%；开着设置窗口时主进程约 34 MB，另有 6 个 WebView2 子进程合计约 356 MB；关窗后子进程全部退出，主进程仍约 34 MB。**有 `[失败]` 就先看它后面的说明：热键被别的程序占着、通知被系统勿扰模式吞掉都是环境原因，处理环境，不要改脚本让它通过。**
+预期：每项一行 `[通过]`，没有 `[失败]`，最后 `汇总：通过 29 项，失败 0 项`。中间有几行 `INFO`，是空闲与开着窗口时的内存和 CPU 数字，要记进设计文档。参考（本机）：空闲时工作集约 24 MB、私有内存约 4 MB、10 秒内 CPU 0.00%；开着设置窗口时主进程约 34 MB，另有 6 个 WebView2 子进程合计约 356 MB；关窗后子进程全部退出，主进程仍约 34 MB。**有 `[失败]` 就先看它后面的说明：热键被别的程序占着、通知被系统勿扰模式吞掉都是环境原因，处理环境，不要删检查项、不要放宽判断来让它通过；只有探针里用来开关窗口的测试热键 `Ctrl+Alt+F9` 被占着时，才可以换一个空闲的组合（见上面的说明）。产品的 `Ctrl+Alt+R / S / Q` 被占着是要如实报告的发现，不能这样绕。**
 
 **核对设计文档里的结论**（§6.2 的“S5 结果”、§10.5 S5 一行、§12）：热键默认值 `Ctrl+Alt+R / S / Q` 保持；注册策略用“常驻注册”；管理员权限窗口在前台时热键是否生效、独占全屏、重启后自启、托盘外观这几项没有自动覆盖，写“未验证”；Windows 11 默认把新托盘图标收进溢出区，首次运行向导里要提示用户把它拖到任务栏；WebView2 只在设置窗口打开期间占内存（脚本里的 `INFO` 行），常驻时不占。作者已经按这些写好了；你这次的数字不同就改成你的，并写明日期（用 `Get-Date` 取）。
 
