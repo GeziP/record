@@ -8,6 +8,7 @@ mod health_loop;
 pub mod lock;
 pub mod meeting;
 pub mod recorder;
+pub mod recovery;
 mod slot;
 mod snapshot;
 
