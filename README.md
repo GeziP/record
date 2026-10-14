@@ -2,7 +2,15 @@
 
 Windows 11 上的会议录屏小工具：常驻托盘，热键开始、热键保存。画面、对方的声音、我的声音分轨落盘，保存后合成 `meeting.mp4`。以后的子项目会加上本地转写与发言人区分。
 
-状态：子项目 A（静默录屏器）实施中。设计见 `docs/superpowers/specs/`，实施计划见 `docs/superpowers/plans/`。
+状态：子项目 A（静默录屏器）已实现：常驻托盘，热键开始与保存，三轨落盘并生成 `meeting.mp4`，崩溃后自动恢复。设计见 `docs/superpowers/specs/`，实施计划见 `docs/superpowers/plans/`。哪些情形没有真机验证过，见设计文档 §10.5。
+
+## 使用
+
+1. 构建：`pnpm --dir app install`、`pnpm --dir app build`，再 `cargo build --release -p record-shell`，得到 `target\release\record.exe`。
+2. ffmpeg：运行 `scripts\fetch-ffmpeg.ps1`，或把 LGPL 构建的 `ffmpeg.exe` 放在 `record.exe` 旁边，或设环境变量 `RECORD_FFMPEG`。
+3. 运行 `record.exe`：没有窗口，只有托盘图标。第一次运行会弹出设置向导（保存位置、热键、开机自启）。
+4. 默认热键：`Ctrl+Alt+R` 开始，`Ctrl+Alt+S` 保存并结束本场，`Ctrl+Alt+Q` 保存并退出程序，都可以在设置里改。
+5. 每场录制一个目录，在保存位置下（默认 `<视频库>\Record`）：`video.mkv`、`mic.mka`、`system.mka`、`meeting.mp4`、`session.json`。配置在 `%APPDATA%\record\config.toml`，日志在 `%LOCALAPPDATA%\record\logs\`。
 
 ## 使用边界
 
