@@ -272,6 +272,9 @@ try {
         Start-Sleep -Seconds 4
         $tips = @(Read-Log $box | Where-Object { $_ -match '托盘提示更新.*录制中' })
         Check '录制中托盘提示随时间更新' ($tips.Count -ge 2) "提示更新 $($tips.Count) 次，最后一条：$($tips[-1])"
+        # ffmpeg 写文件不刷盘，目录项里的大小会一直是 0；提示里的“已写入”要读真实大小才会增长
+        $shownMb = if ($tips.Count -gt 0 -and $tips[-1] -match '已写入 (\d+) MB') { [int]$Matches[1] } else { -1 }
+        Check '录制中托盘提示里的“已写入”随录制增长（不是一直 0 MB）' ($shownMb -gt 0) "最后一条：$($tips[-1])"
         $recCpu = Cpu-Percent $app 6
         Info ('录制中：外壳进程 CPU {0:N1}%（单核口径）' -f $recCpu)
 
