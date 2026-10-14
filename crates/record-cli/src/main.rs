@@ -1,6 +1,7 @@
 //! 开发与验证用的命令行工具：spike 的采集、分析、自检；不属于最终安装包。
 
 mod args;
+mod clocks;
 mod frames;
 mod packets;
 mod rec;
@@ -34,6 +35,7 @@ fn main() -> Result<()> {
         (Some("s2"), Some("window")) => s2bench::window_cmd(&args),
         (Some("s2"), Some("bench")) => s2bench::bench_cmd(&args),
         (Some("s3"), Some("stimulus")) => s3::stimulus_cmd(&args),
+        (Some("s3"), Some("clocks")) => clocks::clocks_cmd(&args),
         (Some("s3"), Some("analyze")) => s3::analyze_cmd(&args),
         (Some("record"), _) => rec::record_cmd(&args),
         (Some("recover"), _) => rec::recover_cmd(&args),
@@ -78,5 +80,8 @@ const USAGE: &str = "用法：record-cli <命令>
   s3 stimulus [--secs 60] [--interval 2.0083] [--lead 3] [--freq 1000] [--naive] [--device 设备ID] [--monitor ...]
                                       屏幕中央闪白并在测试音出声的那一刻响起（间隔与帧周期错开），用来测量画面与声音的同步；
                                       --naive 改成写入即闪（测出来的就是播放设备的延迟）
+  s3 clocks [--beeps 6] [--interval 2] [--freq 1000] [--limit-ms 80] [--device 设备ID]
+                                      不录屏：在端点上放几声测试音，同时用录制器的系统音路径录下来，比较“播放流位置推算的出声时刻”
+                                      与“录下来的声音被放在哪里”；差得超过限值，说明这个端点上 S3 的参照测不准
   s3 analyze <meeting.mp4> [--roi 0.35,0.35,0.3,0.3] [--freq 1000] [--limit-ms 80] [--search 1.0] [--verbose]
                                       从成品里找闪屏与测试音，配对后估计画面比声音晚多少毫秒（需要 ffmpeg 与 ffprobe）";
