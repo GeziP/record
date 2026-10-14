@@ -3,6 +3,7 @@
 //! 线程模型：每个采集源一个线程（音频 WASAPI 事件线程、画面循环线程），每轨一个 ffmpeg 子进程加一个写入线程，
 //! 再加一个健康监测线程。采集线程只把数据放进写入器的队列，从不做磁盘 I/O。
 
+use crate::awake::Awake;
 use crate::disk;
 use crate::events::{EngineEvent, StartError};
 use crate::fault::{Fault, FaultSwitch};
@@ -187,6 +188,7 @@ pub struct Recorder {
     active: Arc<AtomicBool>,
     fault: Arc<FaultSwitch>,
     lock: Option<SessionLock>,
+    awake: Option<Awake>,
     initial_meta: SessionMeta,
 }
 
@@ -314,6 +316,7 @@ pub fn start(p: StartParams, events: Sender<EngineEvent>) -> Result<Recorder, St
         active: Arc::clone(&active),
         fault: Arc::clone(&fault),
         lock: Some(lock),
+        awake: None,
         initial_meta: meta.clone(),
     };
 
@@ -425,6 +428,9 @@ pub fn start(p: StartParams, events: Sender<EngineEvent>) -> Result<Recorder, St
         let _ = events.send(EngineEvent::Alert(crate::events::Alert::NoMic));
     }
     rec.started = Instant::now();
+    // 画面靠桌面复制，显示器一休眠就没有画面：录制期间不让显示器和系统因空闲而休眠。放在所有采集都起来之后，启动失败的路径碰不到电源状态；
+    // 请求不到也照常录，只留一条警告。
+    rec.awake = Awake::new("Record 正在录制会议（保存或结束后自动恢复）").inspect_err(|e| tracing::warn!("没能请求保持唤醒（{e}）：久不动鼠标时显示器可能休眠，休眠期间录不到画面")).ok();
     Ok(rec)
 }
 
@@ -629,6 +635,8 @@ impl Recorder {
         if let Err(e) = save_meta(&self.dir, &meta) {
             warnings.push(format!("写 session.json 失败：{e}"));
         }
+        // 都存好了：撤销保持唤醒，系统恢复自己的休眠计时
+        self.awake = None;
         if let Some(l) = self.lock.take() {
             l.release();
         }
