@@ -25,6 +25,9 @@ fn main() -> Result<()> {
         (Some("s1"), Some("packets")) => s1::packets_cmd(&args),
         (Some("s1"), Some("selftest")) => selftest::selftest_cmd(&args),
         (Some("s1"), Some("response")) => response::response_cmd(&args),
+        (Some("s2"), Some("monitors")) => s2::monitors_cmd(),
+        (Some("s2"), Some("selftest")) => s2::selftest_cmd(&args),
+        (Some("s2"), Some("probe")) => s2::probe_cmd(&args),
         _ => bail!("{USAGE}"),
     }
 }
@@ -44,4 +47,11 @@ const USAGE: &str = "用法：record-cli <命令>
                                       默认播放设备上的回环自检
   s1 response [--play-rate 48000] [--cap-rate 48000] [--freqs 1000,4000,8000,12000,16000]
              [--amp 0.1] [--burst] [--with-mic]
-                                      回环链路的频率响应（高频是否被砍掉）";
+                                      回环链路的频率响应（高频是否被砍掉）
+  s2 monitors                         列出显示器（分辨率、刷新率、缩放、HDR 与 SDR 内容亮度）
+  s2 selftest [--secs 8] [--fps 15] [--size 960x540] [--static] [--tolerance 6]
+              [--monitor primary|foreground|N] [--out WxH]
+                                      在目标显示器中央放测试窗口，验证 GPU 转换的颜色、黑边与画面陈旧程度
+                                      （--size 取显示器整屏大小再加 --static，可验证桌面完全静止时的首帧）
+  s2 probe [--fps 15] [--size 960x540] [--monitor ...] [--out DIR]
+                                      排查用：对照 GDI 读到的颜色与桌面复制采到的颜色，导出只含测试窗口的裁剪图";
