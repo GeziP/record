@@ -3955,6 +3955,9 @@ try {
         Start-Sleep -Seconds 4
         $tips = @(Read-Log $box | Where-Object { $_ -match '托盘提示更新.*录制中' })
         Check '录制中托盘提示随时间更新' ($tips.Count -ge 2) "提示更新 $($tips.Count) 次，最后一条：$($tips[-1])"
+        # ffmpeg 写文件不刷盘，目录项里的大小会一直是 0；提示里的“已写入”要读真实大小才会增长
+        $shownMb = if ($tips.Count -gt 0 -and $tips[-1] -match '已写入 (\d+) MB') { [int]$Matches[1] } else { -1 }
+        Check '录制中托盘提示里的“已写入”随录制增长（不是一直 0 MB）' ($shownMb -gt 0) "最后一条：$($tips[-1])"
         $recCpu = Cpu-Percent $app 6
         Info ('录制中：外壳进程 CPU {0:N1}%（单核口径）' -f $recCpu)
 
@@ -4312,7 +4315,7 @@ $env:RECORD_FFMPEG = (Resolve-Path vendor\ffmpeg\bin\ffmpeg.exe).Path
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\shell-check.ps1
 ```
 
-预期：每项一行 `[通过]`，没有 `[失败]`，最后 `汇总：通过 96 项，失败 0 项`，并列出设置窗口截图的位置。参考（本机，两次测量）：待命时工作集 19.8～24.4 MB、私有内存 6.6～7.2 MB；录制中外壳进程 CPU 5.2%～7.0%（单核口径，真正吃 CPU 的是 ffmpeg，见计划 A3 的 S2 压力测试）；睡眠、关机通知的处理（含保存本场）各约 0.3～0.4 秒。**失败时先看那一项后面的说明；热键被别的程序占着、系统通知被“勿扰”吞掉都是环境原因，处理环境，不要改脚本让它通过。**
+预期：每项一行 `[通过]`，没有 `[失败]`，最后 `汇总：通过 97 项，失败 0 项`，并列出设置窗口截图的位置。参考（本机，两次测量）：待命时工作集 19.8～24.4 MB、私有内存 6.6～7.2 MB；录制中外壳进程 CPU 5.2%～7.0%（单核口径，真正吃 CPU 的是 ffmpeg，见计划 A3 的 S2 压力测试）；睡眠、关机通知的处理（含保存本场）各约 0.3～0.4 秒。**失败时先看那一项后面的说明；热键被别的程序占着、系统通知被“勿扰”吞掉都是环境原因，处理环境，不要改脚本让它通过。**
 
 - [ ] **步骤 5：删除脚本留在临时目录的截图**
 
