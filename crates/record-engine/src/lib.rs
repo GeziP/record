@@ -6,6 +6,7 @@ pub mod events;
 pub mod fault;
 pub mod lock;
 mod slot;
+mod snapshot;
 
 pub use events::{Alert, EngineEvent, StartError, describe_audio_event, describe_video_event};
 pub use fault::Fault;
