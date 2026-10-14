@@ -2,6 +2,7 @@
 
 mod args;
 mod packets;
+mod s1;
 mod wav;
 
 fn main() {}
