@@ -5,6 +5,7 @@ mod frames;
 mod packets;
 mod response;
 mod s1;
+mod s2;
 mod selftest;
 mod wav;
 
