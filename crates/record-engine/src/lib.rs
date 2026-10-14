@@ -3,5 +3,7 @@
 
 pub mod disk;
 pub mod events;
+pub mod fault;
 
 pub use events::{Alert, EngineEvent, StartError, describe_audio_event, describe_video_event};
+pub use fault::Fault;
