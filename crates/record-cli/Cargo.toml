@@ -13,6 +13,7 @@ path = "src/main.rs"
 record-core = { path = "../record-core" }
 record-mux = { path = "../record-mux" }
 record-capture = { path = "../record-capture" }
+record-engine = { path = "../record-engine" }
 anyhow.workspace = true
 crossbeam-channel.workspace = true
 serde.workspace = true

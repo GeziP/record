@@ -3,6 +3,7 @@
 mod args;
 mod frames;
 mod packets;
+mod rec;
 mod response;
 mod s1;
 mod s2;

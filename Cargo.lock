@@ -356,6 +356,7 @@ dependencies = [
  "crossbeam-channel",
  "record-capture",
  "record-core",
+ "record-engine",
  "record-mux",
  "serde",
  "serde_json",
