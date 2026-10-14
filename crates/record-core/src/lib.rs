@@ -8,6 +8,7 @@ pub mod health;
 pub mod hotkey;
 pub mod limits;
 pub mod pacer;
+pub mod paths;
 pub mod session;
 pub mod syncprobe;
 pub mod testpattern;
