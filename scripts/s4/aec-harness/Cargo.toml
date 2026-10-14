@@ -1,0 +1,17 @@
+[package]
+name = "aec-harness"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "S4 评测用的回声消除小程序：把 corti-aec 与 aec3 包成同一个命令行（不属于主工作区，不随产品发布）"
+
+[dependencies]
+aec3 = "=0.4.0"
+corti-aec = "=0.5.1"
+rustfft = "=6.4.1"
+
+# 自成一个工作区：不并入仓库根目录的工作区，依赖锁定在自己的 Cargo.lock 里
+[workspace]
+
+[profile.release]
+opt-level = 3
