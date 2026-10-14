@@ -9,5 +9,6 @@ pub mod monitor;
 pub mod pipeline;
 pub mod qpc;
 pub mod render;
+pub mod testwin;
 pub mod tonemap;
 pub mod video;
