@@ -6,4 +6,5 @@
 
 pub mod hotkeys;
 pub mod notice;
+pub mod runner;
 pub mod tray_model;
